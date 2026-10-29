@@ -106,11 +106,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: us-east-1
+
 
       - name: Login to Amazon ECR
         id: login-ecr
