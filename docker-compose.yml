@@ -1,56 +1,70 @@
-version: "3.8"
-
 services:
-  nginx:
-    build: ./nginx
-    image: nginx
-    container_name: "nginx_cont"
-    ports:
-      - "80:80"
-    restart: always
-    depends_on:
-      - django_app
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in your local environment}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-test_db}
+      MYSQL_USER: ${MYSQL_USER:-notesapp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in your local environment}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
     networks:
       - notes-app-nw
 
   django_app:
     build:
       context: .
-    image: django_app
-    container_name: "django_cont"
-    ports:
-      - "8000:8000"
-    command: sh -c "python manage.py migrate --noinput && gunicorn notesapp.wsgi --bind 0.0.0.0:8000"
+      dockerfile: Dockerfile
+    image: django-notes-app:local
+    restart: unless-stopped
     env_file:
-      - ".env"
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE:-test_db}
+      DB_USER: ${MYSQL_USER:-notesapp}
+      DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in your local environment}
+    expose:
+      - "8000"
     depends_on:
-      - db
-    restart: always
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn notesapp.wsgi:application --bind 0.0.0.0:8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/admin || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/admin/ -o /dev/null"]
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     networks:
       - notes-app-nw
 
-  db:
-    image: mysql
-    container_name: "db_cont"
-    environment:
-      - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=test_db
-    volumes:
-      - ./data/mysql/db:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+  nginx:
+    build:
+      context: ./nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      django_app:
+        condition: service_healthy
     networks:
       - notes-app-nw
 
 networks:
   notes-app-nw:
+    driver: bridge
+
+volumes:
+  mysql_data:
+

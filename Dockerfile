@@ -1,21 +1,28 @@
-FROM python:3.9
+FROM python:3.9-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app/backend
 
-COPY requirements.txt /app/backend
+# Install system dependencies for mysqlclient and health checks
 RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y gcc default-libmysqlclient-dev pkg-config \
+    && apt-get install -y --no-install-recommends \
+       gcc \
+       default-libmysqlclient-dev \
+       pkg-config \
+       curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir mysqlclient
 
-# Install app dependencies
-RUN pip install mysqlclient
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . /app/backend
+# Copy application code (secrets must be excluded by .dockerignore)
+COPY . .
 
 EXPOSE 8000
-CMD ["python3", "manage.py", "runserver", "0.0.0.0:8000"]
-#RUN python manage.py migrate
-#RUN python manage.py makemigrations
+
+# Run the application with Gunicorn
+CMD ["gunicorn", "notesapp.wsgi:application", "--bind", "0.0.0.0:8000"]
